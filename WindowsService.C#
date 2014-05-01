@@ -1,0 +1,520 @@
+using System;
+using System.Collections;
+using System.ComponentModel;
+using System.Data;
+using System.Diagnostics;
+using System.ServiceProcess;
+using RegClassTest;
+using Microsoft.Win32;
+using System.Timers;
+using System.IO;
+using System.Web.Mail;
+using System.Web;
+using Microsoft.Data.Odbc;
+using System.Text;
+using System.Windows.Forms;
+using System.Drawing;
+
+namespace MES_ALARM_MONITOR
+{
+ public class Service1 : System.ServiceProcess.ServiceBase
+ {
+  /// <summary> 
+  /// Required designer variable.
+  /// </summary>
+  private System.ComponentModel.Container components = null;
+  private StreamWriter fileToDSError = null;
+
+  //private DateTime lastRun;
+  private System.Timers.Timer timer;
+  private clsRegistry reg = new clsRegistry(); 
+  private RegistryKey rk = Registry.LocalMachine.OpenSubKey("SOFTWARE\\MES_ALARM_MONITOR",true);
+
+  private string strMailServer = ""; 
+  private string strDirectory_1 = "";
+  private string strDirectory_2 = "";
+  private string strDirectory_3 = "";
+  private string strExtension = ""; 
+  private string strMailHeader = "";
+  private string strMessage = "";
+  private string strMailReceiver = "";
+  private string strTimerInterval = "";
+  private string m_strPath_ErrorLogFile = "";
+  private string strProduction = "DB Connect String - Production";
+  private string strHistory = "DB Connect String - History";
+  private string strKnowledge = "DB Connect String - Knowledge";
+  private string strDatamart = "DB Connect String - Datamart";
+  private string strDashboard = "DB Connect String - Dashboard";
+  private string eDBProduction = "";
+  private string eDBHistory;
+  private string eDBKnowledge;
+  private string eDBDatamart;
+  private string eDBDashboard;
+  string[] dir2Check = new String[3];
+  private int intLimit;
+
+  public System.ServiceProcess.ServiceController sController;
+  private System.Windows.Forms.NotifyIcon sNotifyIcon = new NotifyIcon();
+  //private System.Windows.Forms.ListBox listBox1; // NotifyIcon object
+  private System.Windows.Forms.ContextMenu sContextMenu;
+//  //private System.Drawing.Icon mainIcon;
+//  // Declaring Event 
+  public delegate void StatusChanged(object sender, SystemTrayNotificationEventArgs e);
+  public event StatusChanged OnStatusChanged;
+
+
+//  private NotifyIcon sNotifyIcon;
+//  private ContextMenu sContextMenu;
+//  private System.ServiceProcess.ServiceController sServiceController;
+  
+
+  public Service1()
+  {
+   // This call is required by the Windows.Forms Component Designer.
+   InitializeComponent();
+
+   // TODO: Add any initialization after the InitComponent call
+  }
+
+  // The main entry point for the process
+  static void Main()
+  {   
+
+   System.ServiceProcess.ServiceBase[] ServicesToRun;
+   
+   // More than one user Service may run within the same process. To add
+   // another service to this process, change the following line to
+   // create a second service object. For example,
+   //
+   //   ServicesToRun = New System.ServiceProcess.ServiceBase[] {new Service1(), new MySecondUserService()};
+   //
+   ServicesToRun = new System.ServiceProcess.ServiceBase[] { new Service1() };
+
+   System.ServiceProcess.ServiceBase.Run(ServicesToRun);
+
+   
+  }
+
+  /// <summary> 
+  /// Required method for Designer support - do not modify 
+  /// the contents of this method with the code editor.
+  /// </summary>
+  private void InitializeComponent()
+  {
+//sNotifyIcon.Icon = new System.Drawing.Icon("D:\\MES\\SJ_MES_ReleaseII\\Biztalk_service\\MES_ALARM_MONITOR\\MAM_icon.bmp");
+//
+//   sContextMenu.MenuItems.Add(0,new MenuItem("S&tart"));
+//sContextMenu.MenuItems.Add(0,new MenuItem("Sto&p"));
+//   sContextMenu.MenuItems.Add(0,new MenuItem("E&xit"));
+
+//   sNotifyIcon.ContextMenu = sContextMenu;
+   //sContextMenu;
+   //sServiceController;
+ 
+
+   components = new System.ComponentModel.Container();
+   this.ServiceName = "MES ALARM MONITOR SERVICE";
+
+   // The following parameters are stored in the registry on the server executing this application
+   strMailReceiver = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","EmailStr");
+   strMailServer = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","MailServerStr"); 
+   
+   // directories to monitor
+   strDirectory_1 = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","Directory_1"); 
+   strDirectory_2 = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","Directory_2"); 
+   strDirectory_3 = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","Directory_3");
+   
+   if (strDirectory_1 != "")
+    dir2Check[0] = strDirectory_1;
+   if (strDirectory_2 != "" && strDirectory_2 != null)
+    dir2Check[1] = strDirectory_2;
+   if (strDirectory_3 != "" && strDirectory_2 != null)
+    dir2Check[2] = strDirectory_3;
+
+   // database to monitor
+   eDBProduction = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR",strProduction);
+   eDBHistory = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR",strHistory);
+   eDBKnowledge = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR",strKnowledge);
+   eDBDatamart = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR",strDatamart);
+   eDBDashboard = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR",strDashboard);
+
+   strExtension = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","ExtensionStr");  
+   strMailHeader = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","MailHeaderStr"); 
+   strTimerInterval = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","strTimerInterval"); 
+   m_strPath_ErrorLogFile = reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","Error Log");
+   intLimit = Convert.ToInt32(reg.GetStringValue(Registry.LocalMachine,"SOFTWARE\\MES_ALARM_MONITOR","File Process Delay Limit"));
+   
+   //intErrorCounter = 0;
+   
+   // A timer object is created which starts each specified interval
+   timer = new System.Timers.Timer();
+   timer.Interval = Convert.ToInt32(strTimerInterval); //"30000"); //strTimerInterval.ToString());
+   timer.Elapsed += new ElapsedEventHandler( ServiceTimer_Tick  );
+
+//   OnStatusChanged += new StatusChanged(SystemTrayNotificationHandler); // Setting Event Handler
+
+  }
+
+  /// <summary>
+  /// Clean up any resources being used.
+  /// </summary>
+  protected override void Dispose( bool disposing )
+  {
+   //sNotifyIcon.Dispose();
+   if( disposing )
+   {
+    if (components != null) 
+    {
+     components.Dispose();
+    }
+   }
+   base.Dispose( disposing );
+   
+
+  }
+
+  /// <summary>
+  /// Set things in motion so your service can do its work.
+  /// </summary>
+  protected override void OnStart(string[] args)
+  {
+   // TODO: Add code here to start your service.
+   timer.AutoReset = true;
+   timer.Enabled = true;
+
+   fileToDSError = new StreamWriter(m_strPath_ErrorLogFile + "\\MES_ALARM.log",true,System.Text.Encoding.Default);
+   fileToDSError.WriteLine(System.DateTime.Now.ToString() + " SERVICE STARTED");
+   //EventLog.WriteEntry("MES ALARM MONITOR","SERVICE STARTED" ,EventLogEntryType.Information);
+   sController = new  System.ServiceProcess.ServiceController("MES_ALARM_MONITOR");
+
+   try
+   {
+    // icon initialization
+    System.Drawing.Icon ico = new System.Drawing.Icon("D:\\MES\\SJ_MES_ReleaseII\\Biztalk_service\\MES_ALARM_MONITOR\\bin\\debug\\mam1.ico");
+    //fileToDSError.WriteLine(System.DateTime.Now.ToString() + " ICON INITIALIZATION");
+    //sNotifyIcon.Icon = ico;
+    //
+    //sNotifyIcon.Click = new EventHandler(this.notifyIcon1_Click);
+    
+    sNotifyIcon.Icon = ico;
+    sNotifyIcon.Text = "MES ALARM MONITOR";
+    sNotifyIcon.Visible = true;
+   
+
+    sContextMenu = new System.Windows.Forms.ContextMenu();
+
+    // Adding menu items
+    //    sContextMenu.MenuItems.Add(new MenuItem("S&tart", new System.EventHandler(DefaultMenuHandler)));
+    //    sContextMenu.MenuItems.Add(new MenuItem("Sto&p", new System.EventHandler(DefaultMenuHandler)));
+    //    sContextMenu.MenuItems.Add(new MenuItem("&Pause", new System.EventHandler(DefaultMenuHandler)));
+    //    sContextMenu.MenuItems.Add(new MenuItem("-", new System.EventHandler(DefaultMenuHandler)));
+    //    sContextMenu.MenuItems.Add(new MenuItem("E&xit", new System.EventHandler(DefaultMenuHandler)));
+
+    sNotifyIcon.ContextMenu = sContextMenu; //LoadDefaultContextMenu();
+    // end icon initialization
+   } 
+   catch (Exception iE)
+   {
+    MessageBox.Show(iE.Message);
+   }
+   //fileToDSError.WriteLine(System.DateTime.Now.ToString() + " DISPLAY ICON");
+
+  }
+ 
+  /// <summary>
+  /// Stop this service.
+  /// </summary>
+  protected override void OnStop()
+  {
+   sNotifyIcon.Dispose();
+
+   // TODO: Add code here to perform any tear-down necessary to stop your service.
+   fileToDSError.WriteLine(System.DateTime.Now.ToString() + " SERVICE STOPPED");
+   fileToDSError.Close();
+   //EventLog.WriteEntry("MES ALARM MONITOR","SERVICE STOPPED" ,EventLogEntryType.Information);
+  }
+
+  private void ServiceTimer_Tick(object sender, System.Timers.ElapsedEventArgs e)
+  {
+   string sInError = null;
+
+   try
+   { 
+    // to systematically check the following:
+     //1. availability of VOLTAN directories
+     //2. availability of the ADVANTAGE database server
+     //3. timeliness of file processing
+    if (dir2Check.Length > 0)
+    {
+     sInError = "";
+     foreach (string connStr in dir2Check)
+     {
+      //String dir2Check = connStr;  //strDirectory_1;
+      //fileToDSError.WriteLine(System.DateTime.Now.ToString() + " DIRECTORIES TO CHECK -- " + strDirectory_1);
+      char[] seps = { ';', '\n','\r' };
+      if (connStr == null)
+       continue;
+      String[] values = connStr.Split(seps);
+
+      foreach (string s in values)
+      {
+       sInError = s;
+
+       if (System.IO.Directory.Exists(s))
+       {
+        
+        string[] fileEntries = System.IO.Directory.GetFiles(s, strExtension); 
+        // check the timestamp on the file to ensure that it was processed in expcted time frame
+        Array.Sort(fileEntries);
+        // get the last file in the array
+        if (fileEntries.Length > 0)
+        {
+         string oldestFile = fileEntries[0];
+         System.TimeSpan strLimit = new TimeSpan(0, 0, intLimit, 0, 0 ); //5000000000);
+         DateTime h = System.DateTime.Now.Subtract(strLimit);
+         
+         int iVal = System.DateTime.Compare(System.DateTime.Now.Subtract(strLimit),System.IO.File.GetCreationTime(oldestFile));
+
+         // if a > b, then 1
+         // if the time now minus 5 minutes is greater than the creation time of the file
+         if (iVal == 1)
+         {
+
+          fileToDSError.WriteLine(System.DateTime.Now.ToString() + " MES-ERROR (101) - Failed to pickup files within specified time frame in directory << " + s + " >>", strMailReceiver, strMailServer);
+          SendEmailNotification("MES-ERROR (101) - Failed to pickup files within specified time frame in directory << " + s + " >>", strMailReceiver, strMailServer);
+          EventLog.WriteEntry("MES ALARM MONITOR","MES-ERROR (101) - Failed to pickup files within specified time frame in directory << " + s + " >>" ,EventLogEntryType.Error);
+         }
+        }
+       } 
+       else if(!System.IO.Directory.Exists(s))
+       {
+        fileToDSError.WriteLine(System.DateTime.Now.ToString() + "[DIRECTORY DOES NOT EXIST ERROR] " + s);
+        SendEmailNotification("MES-ERROR (201) - Interconnect channel failure on directory << " + s + " >>", strMailReceiver, strMailServer);
+       }
+      }
+     }
+    }// end if
+
+   } 
+   catch (Exception e1)
+   {
+    strMessage = "ERROR detecting the directory "+ sInError;
+    fileToDSError.WriteLine(System.DateTime.Now.ToString() + "[DIRECTORY ERROR] " + strMessage + e1.Message);
+    SendEmailNotification(strMessage + "-" + e1.Message, strMailReceiver, strMailServer);
+   }
+
+   // send error message
+   // Code 100 - File Transfer Issue
+   // #101 - File Transfer Timeout Issue potentially related to interruption or failure of Interface Manager
+   // Code 200 - Network / Database Connectivity Issue
+   // #201 - Interconnection between the source and target directories failed.
+   // #202 - Production Database connection failure 
+   // #203 - Historical Database connection failure 
+   // #204 - Knowledge Repository connection failure 
+   // #205 - DataMart connection failure
+   // #206 - Dashboard connection failure 
+   // #300 - Email Notification Error
+       
+   // check the db connections
+   string [] arConnections = new string[5];
+   arConnections[0] = eDBProduction;
+   arConnections[1] = eDBHistory;
+   arConnections[2] = eDBKnowledge;
+   arConnections[3] = eDBDatamart;
+   arConnections[4] = eDBDashboard;
+
+   int intErrorCode = 200;
+   bool rVal = true;
+   foreach (string dbConnection in arConnections)
+   {
+    ++intErrorCode;
+    rVal = checkDBConnection(dbConnection);
+    string dbname = "";
+    if (intErrorCode == 201)
+     dbname = "PRODUCTION";
+    else if (intErrorCode == 202)
+     dbname = "HISTORY";
+    else if (intErrorCode == 203)
+     dbname = "KNOWLEDGE";
+    else if (intErrorCode == 204)
+     dbname = "DATAMART";
+    else if (intErrorCode == 205)
+     dbname = "DASHBOARD";
+
+    if ((rVal == false && dbConnection != "") && (rVal == false && dbConnection != null))
+    {
+     fileToDSError.WriteLine(System.DateTime.Now.ToString() + " MES-ERROR (" + intErrorCode + ") - Database Connection failure on << " + dbname + " >>", strMailReceiver, strMailServer);
+     SendEmailNotification("MES-ERROR (" + intErrorCode + ") - Database Connection failure on << " + dbname + " >>", strMailReceiver, strMailServer);
+     EventLog.WriteEntry("MES ALARM MONITOR","MES-ERROR (" + intErrorCode + ") - Database Connection failure on << " + dbname + " >>",EventLogEntryType.Error);
+    }
+    
+   }
+   
+  }
+
+  private bool checkDBConnection(string connection)
+  {
+   try
+   {
+    if (connection == "" || connection == null)
+    {
+     //fileToDSError.WriteLine(System.DateTime.Now.ToString() + " connection is null");
+     return false;
+    }
+    string connectionString = Encoding.ASCII.GetString(Convert.FromBase64String(connection.ToString()));
+    OdbcConnection myConn = new OdbcConnection(connectionString);
+
+    string strQuery = "SELECT COUNT(*) FROM USER_TABLES";
+    OdbcCommand myOdbcCommand = new OdbcCommand(strQuery);
+    myOdbcCommand.Connection = myConn;
+    myConn.Open();
+    OdbcDataReader myReader = myOdbcCommand.ExecuteReader();
+    try
+    {
+     while(myReader.Read()) 
+     {
+      //fileToDSError.WriteLine(System.DateTime.Now.ToString() + "RECORD SET >>>" + myReader.GetString(0));
+      break;
+     }
+    }
+    finally
+    {
+     myReader.Close();
+     myConn.Close();
+    }
+
+   } 
+   catch(Exception ex)
+   {
+    SendEmailNotification("MES-ERROR (200) - Database Connection Error " + ex.Message, strMailReceiver, strMailServer);
+    fileToDSError.WriteLine(System.DateTime.Now.ToString() + " ERROR IN CHECK DB CONNECTION "+ ex.Message);
+    EventLog.WriteEntry("MES ALARM MONITOR","MES-ERROR (200) - Database Connection Error " + ex.Message,EventLogEntryType.Error);
+    return false;
+   }
+   
+   return true;
+  }
+  private void SendEmailNotification(string strMessage, string strMailReceiver, string strMailServer)
+  {
+   //return;
+   try
+   {
+    MailMessage mailMsg = new MailMessage();
+    mailMsg .From = "hcheung@sjm.com";
+    mailMsg .To = strMailReceiver;
+    mailMsg .Cc = "";
+    mailMsg .Bcc = "";
+    mailMsg .Subject = "MES ALARM MONITOR & NOTIFICATION";
+    mailMsg .Body = strMessage;
+    SmtpMail.SmtpServer = strMailServer;
+    SmtpMail.Send(mailMsg); 
+   }
+   catch (Exception e)
+   {
+    fileToDSError.WriteLine(System.DateTime.Now.ToString() + ">>>" + (e.Message));
+    EventLog.WriteEntry("MES ALARM MONITOR","MES-ERROR (300) - Email Notification Error " + e.Message,EventLogEntryType.Error);
+    fileToDSError.Flush();
+   }
+   finally
+   { 
+   }
+  }
+  private void DefaultMenuHandler(object sender, System.EventArgs e) 
+  {
+   try 
+   {
+    switch (((MenuItem)sender).Text)
+    {
+     case "S&tart":
+      OnStatusChanged(this, new SystemTrayNotificationEventArgs(SystemTrayNotificationEventType.Start));
+      //MessageBox.Show("starting");
+      //  static void Main()
+      //  {
+      System.ServiceProcess.ServiceBase[] ServicesToRun;
+      // 
+      //   // More than one user Service may run within the same process. To add
+      //   // another service to this process, change the following line to
+      //   // create a second service object. For example,
+      //   //
+      //   //   ServicesToRun = New System.ServiceProcess.ServiceBase[] {new Service1(), new MySecondUserService()};
+      //   //
+      ServicesToRun = new System.ServiceProcess.ServiceBase[] { new Service1() };
+      MES_ALARM_MONITOR.Service1.Run(ServicesToRun);
+
+      //
+      //   System.ServiceProcess.ServiceBase.Run(ServicesToRun);
+      //  }
+
+      break;
+     case "Sto&p":
+      OnStatusChanged(this, new SystemTrayNotificationEventArgs(SystemTrayNotificationEventType.Stop));
+      //      keepAnimationAlive = false;
+      MessageBox.Show("stopping");
+      break;
+     case "&Pause":
+      OnStatusChanged(this, new SystemTrayNotificationEventArgs(SystemTrayNotificationEventType.Pause));
+      //      notifyIcon.Visible = false;
+      MessageBox.Show("pausing");
+      break;
+     case "E&xit":
+      OnStatusChanged(this, new SystemTrayNotificationEventArgs(SystemTrayNotificationEventType.Disposing));
+      sNotifyIcon.Visible = false;
+      MessageBox.Show("disposing");
+      break;
+    }
+   }
+   catch (Exception err)
+   {
+    MessageBox.Show(err.Message,"Error");
+   }
+  }
+  
+  // to catch System Tray Notifications
+  protected void SystemTrayNotificationHandler(object sender, 
+   SystemTrayNotificationEventArgs e)
+  {
+   switch (e.State)
+   {
+    case SystemTrayNotificationEventType.Start:
+     break;
+    case SystemTrayNotificationEventType.Stop:
+     if (sController.CanStop == true)
+     {
+      sController.Stop();
+     }
+
+     break;
+    case 
+    SystemTrayNotificationEventType.Pause:
+     break;
+    case 
+    SystemTrayNotificationEventType.Disposing:
+     break;
+    
+    default:      
+     break;
+   }
+  }
+  /// Summary description for SystemTrayNotificationEventArgs.
+  /// </summary>
+  public class SystemTrayNotificationEventArgs : EventArgs
+  {
+   private SystemTrayNotificationEventType state;
+
+   public SystemTrayNotificationEventArgs(SystemTrayNotificationEventType state) : base()
+   {
+    this.state = state;
+   }
+
+   public SystemTrayNotificationEventType State
+   {
+    get
+    {
+     return state;
+    }
+   }
+  }
+  public enum SystemTrayNotificationEventType {Pause, Start, Stop, Disposing};
+
+ }
+}
